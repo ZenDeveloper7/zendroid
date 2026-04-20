@@ -8,6 +8,9 @@ bottom.
 It is built in Rust with `ratatui` and `crossterm`, with Gradle used as the
 project/task backend.
 
+See [docs/roadmap.md](docs/roadmap.md) for the longer-term plan toward a
+lighter Android Studio alternative.
+
 ## Why this exists
 
 Android Studio can become expensive in RAM-heavy environments, especially when
