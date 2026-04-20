@@ -1,162 +1,156 @@
-# android-dev-cli
+# ZenDroid
 
-`android-dev` is a lightweight command-line workflow for Android development.
-It is not a replacement for Android Studio's editor, profiler, and inspectors,
-but it does replace a lot of the heavy day-to-day actions that make Studio feel
-mandatory: builds, installs, emulator control, screenshots, layout dumps, SDK
-management, and log streaming.
+`zendroid` is a terminal UI for Android development that borrows the basic
+shape of Android Studio while staying far lighter on RAM: file explorer on the
+left, code editor in the middle, Gradle tasks on the right, and logs at the
+bottom.
 
-This project is built around the local `android` CLI plus Gradle.
+It is built in Rust with `ratatui` and `crossterm`, with Gradle used as the
+project/task backend.
 
 ## Why this exists
 
 Android Studio can become expensive in RAM-heavy environments, especially when
-you mainly need to:
+you mostly want:
 
-- build debug APKs
-- install and run on an emulator
-- execute unit or instrumented tests
-- manage SDK packages
-- inspect screens and UI layout trees
-- stream logs
+- a real project tree
+- a built-in editor
+- a visible Gradle task list
+- a bottom log console
+- explicit task execution without hidden automation
 
-For those cases, a small terminal-first workflow is often enough.
+For those cases, a terminal IDE can cover a lot of the daily loop.
 
 ## What it does
 
-`android-dev` combines:
+`zendroid` combines:
 
-- `./gradlew` for builds, installs, and tests
-- `android emulator` for AVD control
-- `android run` for APK deployment
-- `android screen capture` for screenshots
-- `android layout` for layout-tree inspection
-- `adb` for logcat
-- `android sdk` for SDK package management
+- Android project root discovery
+- a keyboard-first file explorer
+- a built-in multi-tab text editor with lightweight syntax highlighting
+- Gradle task discovery and filtering
+- explicit confirm-before-run task execution
+- a live bottom-pane log/output console
+- session restore for open files and pane state
 
 ## Requirements
 
-- Linux or macOS shell environment
-- Bash
-- The `android` CLI installed and working
-- An Android SDK configured
+- Linux or macOS shell environment with Rust
 - A Gradle Android project for project-level commands
 
 ## Install
 
-Clone the repo and copy the script into a directory already on your `PATH`:
+Build the binary:
+
+```bash
+cargo build --release
+```
+
+Then install it wherever you keep local binaries:
 
 ```bash
 mkdir -p ~/.local/bin
-cp ./bin/android-dev ~/.local/bin/android-dev
-chmod +x ~/.local/bin/android-dev
+cp ./target/release/zendroid ~/.local/bin/zendroid
+chmod +x ~/.local/bin/zendroid
 ```
-
-If `~/.local/bin` is not already on your `PATH`, add it in your shell config.
 
 ## Quick start
 
-From inside any Android Gradle project:
+Open the current Android project:
 
 ```bash
-android-dev doctor
-android-dev build
-android-dev install
-android-dev test unit
-android-dev test android
-android-dev apk
-android-dev run
+zendroid
 ```
 
-Outside a project:
+Open a specific project:
 
 ```bash
-android-dev emulator list
-android-dev emulator start medium_phone
-android-dev sdk list
+zendroid --project ~/AndroidStudioProjects/DocSafe
 ```
 
-## Commands
-
-### Project commands
+Open in safe read-only mode:
 
 ```bash
-android-dev doctor
-android-dev build [gradle-task]
-android-dev clean
-android-dev install [gradle-task]
-android-dev apk [variant]
-android-dev run [variant] [device-serial]
-android-dev test unit [gradle-task]
-android-dev test android [gradle-task]
-android-dev logcat [device-serial]
+zendroid --project ~/AndroidStudioProjects/DocSafe --read-only
 ```
 
-### Device and SDK commands
+## CLI options
 
 ```bash
-android-dev emulator list
-android-dev emulator start <avd-name>
-android-dev emulator stop <avd-name>
-android-dev sdk list
-android-dev sdk install <package>...
-android-dev sdk update [package]
-android-dev sdk remove <package>
-android-dev screen [output.png] [device-serial]
-android-dev layout [device-serial]
+zendroid
+zendroid <project-path>
+zendroid --project <project-path>
+zendroid --read-only
+zendroid --theme amber
+zendroid --config /path/to/config.json
 ```
 
-## Examples
+## Default keymap
 
-Build the debug APK:
+- `Alt-1` / `Alt-2` / `Alt-3` / `Alt-4`: jump directly to Files, Editor, Tasks, or Logs
+- `Tab` / `Shift-Tab`: switch panes
+- `Alt-h` / `Alt-l`: resize the focused side pane
+- `Alt-j` / `Alt-k`: resize the logs pane
+- `Alt--`: collapse the focused non-editor pane
+- `Alt-=`: reset the focused pane size
+- `Ctrl-S`: save current file
+- `Ctrl-W`: close current tab
+- `F1` or `?`: help overlay
+- `q`: quit
 
-```bash
-android-dev build
-```
+### File explorer
 
-Install the debug build using Gradle:
+- `Up` / `Down`: move selection
+- `Enter` / `Right`: expand directory or open file
+- `Left`: collapse directory
+- `r`: refresh tree
 
-```bash
-android-dev install
-```
+### Editor
 
-Build a release APK and deploy it to a specific device:
+- `Arrows`: move cursor
+- `Type`: insert text
+- `Enter`: newline
+- `Backspace`: delete
+- `/`: search in current file
+- `[` / `]`: switch tabs
+- syntax colors: lightweight keyword, string, comment, type, and number highlighting
 
-```bash
-android-dev run release emulator-5554
-```
+### Tasks
 
-Capture a screenshot from the current device:
+- `Up` / `Down`: move selection
+- `Enter`: open run confirmation
+- `g`: refresh Gradle task list
+- `f`: filter task list
 
-```bash
-android-dev screen
-```
+### Logs
 
-Print the current layout tree:
+- `Up` / `Down`: scroll output
+- `c`: clear logs
+- `x`: cancel active process
 
-```bash
-android-dev layout
-```
+## Safety model
 
-## Notes
+- Selecting a task never runs it immediately.
+- Running a task always goes through a confirmation step.
+- `--read-only` disables both file edits and task execution.
+- Only one foreground task process is allowed at a time in v0.1.
 
-- `android-dev run` builds the requested variant first, then searches
-  `build/outputs/apk/<variant>` for the APK.
-- `android-dev doctor` tries to show a short list of Gradle tasks when it is
-  run inside a project. If Gradle cannot start in the current environment, it
-  prints a note and continues.
-- `adb` is resolved from your shell first, then from the Android SDK's
-  `platform-tools` directory.
+## Config and session files
+
+- Config: `~/.config/zendroid/config.json`
+- Session: `~/.local/share/zendroid/session.json`
+
+The app creates defaults automatically if they do not exist.
 
 ## Limits
 
 This project does not try to replace:
 
-- code editing
-- Layout Inspector
+- IDE-grade refactors
+- LSP completions
+- diagnostics and code actions
 - Compose previews
 - profilers
-- lint UI
 - APK Analyzer
 - device mirroring
 

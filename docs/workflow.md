@@ -1,36 +1,36 @@
 # Workflow
 
-This repo is meant for a terminal-first Android workflow with a smaller memory
-footprint than keeping Android Studio open all day.
+This repo is meant for a terminal-first Android workflow with a much smaller
+memory footprint than keeping Android Studio open all day.
 
 ## Typical loop
 
-1. Start an emulator.
-2. Build or install a debug build.
-3. Run the app.
-4. Watch logcat.
-5. Capture screenshots or inspect layout when needed.
+1. Open one Android project root.
+2. Browse files from the left pane.
+3. Edit source in the center pane.
+4. Jump directly between panes with `Alt-1..4` instead of cycling with tab.
+5. Resize or collapse panes while you work.
+6. Filter or inspect Gradle tasks on the right.
+7. Confirm task execution only when you actually want it.
+8. Watch all output in the bottom log pane.
 
 Example:
 
 ```bash
-android-dev emulator start medium_phone
-android-dev build
-android-dev install
-android-dev logcat
+zendroid --project ~/AndroidStudioProjects/DocSafe
 ```
 
 ## Recommended split
 
-Use `android-dev` for:
+Use `zendroid` for:
 
-- build and install loops
-- SDK management
-- emulator management
-- screenshots
-- layout tree inspection
-- test execution
-- CI-friendly workflows
+- project browsing
+- quick source edits
+- lightweight syntax-colored editing
+- Gradle task browsing
+- explicit task execution
+- build/test output review
+- low-memory coding sessions
 
 Use Android Studio only when you need:
 
@@ -41,14 +41,15 @@ Use Android Studio only when you need:
 - database inspector
 - APK analyzer
 
-## Pairing with an editor
+## Current product direction
 
-This works well with:
+v0.1 is intentionally scoped to:
 
-- VS Code
-- Zed
-- Neovim
-- Helix
+- one project root per app session
+- a built-in basic editor
+- one foreground task process at a time
+- confirm-before-run behavior
+- keyboard-first navigation
 
-That gives you a setup where the editor handles code and the terminal handles
-Android-specific tasks.
+It is not trying to ship a full Android Studio clone. The goal is a fast,
+usable terminal IDE for the common Android loop.
