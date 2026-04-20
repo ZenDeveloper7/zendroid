@@ -5,6 +5,10 @@ lighter, faster to launch, and easier on RAM. The goal is not to clone every
 Android Studio subsystem exactly, but to deliver the highest-value Android IDE
 experience in a modular terminal UI.
 
+The current product is still in the early foundation stage. This roadmap
+describes the direction from that `v0.1` base toward a broader lightweight
+Android IDE.
+
 ## Product direction
 
 ZenDroid should eventually cover:
@@ -37,7 +41,7 @@ Goal: make ZenDroid a credible daily driver for the common Android loop.
 - harden Gradle task discovery and execution
 - improve device/log panels
 - persist pane layout and richer session state
-- package real `v0.1.x` releases
+- package polished `v0.1.x` releases
 
 Success criteria:
 
@@ -142,6 +146,7 @@ Success criteria:
 - improve editor safety and ergonomics
 - stabilize Gradle/task execution flows
 - improve docs and packaging
+- tighten everyday Android developer workflows
 
 ### v0.2.x
 

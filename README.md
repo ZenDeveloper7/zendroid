@@ -10,6 +10,7 @@ project/task backend.
 
 See [docs/roadmap.md](docs/roadmap.md) for the longer-term plan toward a
 lighter Android Studio alternative.
+See [docs/workflow.md](docs/workflow.md) for the intended day-to-day workflow.
 
 ## Why this exists
 
@@ -24,7 +25,22 @@ you mostly want:
 
 For those cases, a terminal IDE can cover a lot of the daily loop.
 
-## What it does
+## Current status
+
+ZenDroid is currently a strong `v0.1` foundation:
+
+- a single-project Android workspace
+- a file tree, editor, tasks pane, and logs pane
+- session restore for open tabs and focus
+- safe Gradle task execution with confirmation
+- lightweight syntax highlighting
+- keyboard-first navigation and pane management
+
+It is already useful for low-memory Android development sessions, but it is
+not yet trying to fully replace Android Studio's previews, debugging, or code
+intelligence stack.
+
+## What it does today
 
 `zendroid` combines:
 
@@ -76,6 +92,15 @@ Open in safe read-only mode:
 ```bash
 zendroid --project ~/AndroidStudioProjects/DocSafe --read-only
 ```
+
+## Typical workflow
+
+1. Open an Android project root in ZenDroid.
+2. Browse files in the left pane and edit code in the center pane.
+3. Jump directly to Tasks or Logs with `Alt-3` and `Alt-4`.
+4. Filter or inspect Gradle tasks before running anything.
+5. Confirm the exact command before execution.
+6. Review build and test output in the bottom pane.
 
 ## CLI options
 
@@ -145,7 +170,7 @@ zendroid --config /path/to/config.json
 
 The app creates defaults automatically if they do not exist.
 
-## Limits
+## Current limits
 
 This project does not try to replace:
 
@@ -157,4 +182,5 @@ This project does not try to replace:
 - APK Analyzer
 - device mirroring
 
-Those are still better in Android Studio when you actually need them.
+Those workflows are still better in Android Studio today. They are part of the
+longer-term roadmap, not the current `v0.1` contract.

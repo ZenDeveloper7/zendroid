@@ -20,7 +20,7 @@ Example:
 zendroid --project ~/AndroidStudioProjects/DocSafe
 ```
 
-## Recommended split
+## Recommended split today
 
 Use `zendroid` for:
 
@@ -40,10 +40,11 @@ Use Android Studio only when you need:
 - refactors and IDE navigation
 - database inspector
 - APK analyzer
+- deep debugging and advanced code intelligence
 
 ## Current product direction
 
-v0.1 is intentionally scoped to:
+ZenDroid `v0.1` is intentionally scoped to:
 
 - one project root per app session
 - a built-in basic editor
@@ -52,4 +53,5 @@ v0.1 is intentionally scoped to:
 - keyboard-first navigation
 
 It is not trying to ship a full Android Studio clone. The goal is a fast,
-usable terminal IDE for the common Android loop.
+usable terminal IDE for the common Android loop while the heavier IDE features
+move in over later phases.
