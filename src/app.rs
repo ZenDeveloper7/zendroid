@@ -83,6 +83,7 @@ pub struct App {
     pub problems: ProblemsState,
     pub logs: LogState,
     pub layout: PaneLayout,
+    pub help_scroll: usize,
     pub process: ProcessHandle,
     pub status: String,
     pub pending_run: Option<PendingRun>,
@@ -143,6 +144,7 @@ impl App {
             problems: ProblemsState::default(),
             logs: LogState::default(),
             layout: PaneLayout::default(),
+            help_scroll: 0,
             process: ProcessHandle::default(),
             status: "Project loaded".to_string(),
             pending_run: None,
@@ -274,8 +276,27 @@ impl App {
     fn handle_key_event(&mut self, key: KeyEvent) {
         match std::mem::replace(&mut self.input_mode, InputMode::Normal) {
             InputMode::Help => {
-                if !matches!(key.code, KeyCode::Esc | KeyCode::F(1) | KeyCode::Char('?')) {
-                    self.input_mode = InputMode::Help;
+                match key.code {
+                    KeyCode::Esc | KeyCode::F(1) | KeyCode::Char('?') => {}
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        self.help_scroll = self.help_scroll.saturating_add(1);
+                        self.input_mode = InputMode::Help;
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        self.help_scroll = self.help_scroll.saturating_sub(1);
+                        self.input_mode = InputMode::Help;
+                    }
+                    KeyCode::PageDown => {
+                        self.help_scroll = self.help_scroll.saturating_add(10);
+                        self.input_mode = InputMode::Help;
+                    }
+                    KeyCode::PageUp => {
+                        self.help_scroll = self.help_scroll.saturating_sub(10);
+                        self.input_mode = InputMode::Help;
+                    }
+                    _ => {
+                        self.input_mode = InputMode::Help;
+                    }
                 }
                 return;
             }
@@ -313,6 +334,7 @@ impl App {
 
         if key.code == KeyCode::F(1) || key.code == KeyCode::Char('?') {
             self.input_mode = InputMode::Help;
+            self.help_scroll = 0;
             return;
         }
         if key.modifiers.contains(KeyModifiers::ALT) {
@@ -881,6 +903,29 @@ mod tests {
         );
         assert_eq!(app.selected_variant.as_deref(), Some("Debug"));
         assert_eq!(app.right_pane, RightPaneMode::Problems);
+    }
+
+    #[test]
+    fn help_mode_scrolls_and_closes_without_affecting_panes() {
+        let project_root = make_test_project();
+        let session = SessionState::default();
+        let mut app = App::new(project_root, AppConfig::default(), &session, false);
+
+        app.handle_key_event(KeyEvent::from(KeyCode::F(1)));
+        assert!(matches!(app.input_mode, InputMode::Help));
+        assert_eq!(app.help_scroll, 0);
+
+        app.handle_key_event(KeyEvent::from(KeyCode::Down));
+        app.handle_key_event(KeyEvent::from(KeyCode::PageDown));
+        assert_eq!(app.help_scroll, 11);
+        assert!(matches!(app.input_mode, InputMode::Help));
+
+        app.handle_key_event(KeyEvent::from(KeyCode::PageUp));
+        app.handle_key_event(KeyEvent::from(KeyCode::Up));
+        assert_eq!(app.help_scroll, 0);
+
+        app.handle_key_event(KeyEvent::from(KeyCode::Esc));
+        assert!(matches!(app.input_mode, InputMode::Normal));
     }
 
     fn make_test_project() -> PathBuf {

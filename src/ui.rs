@@ -60,7 +60,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
 
     match &app.input_mode {
-        InputMode::Help => draw_help(frame, area),
+        InputMode::Help => draw_help(frame, app, area),
         InputMode::Search { query } => draw_prompt(frame, area, "Search", query),
         InputMode::TaskFilter { query } => draw_prompt(frame, area, "Task Filter", query),
         InputMode::ConfirmRun { command } => draw_confirm(frame, area, command),
@@ -408,65 +408,30 @@ fn draw_confirm(frame: &mut Frame, area: Rect, command: &str) {
     );
 }
 
-fn draw_help(frame: &mut Frame, area: Rect) {
-    let popup = centered_rect(76, 70, area);
+fn draw_help(frame: &mut Frame, app: &App, area: Rect) {
+    let popup = centered_rect(84, 84, area);
     frame.render_widget(Clear, popup);
-    let help = "\
-Global
-  Alt-1..4         Focus Files, Editor, Tools, Logs
-  Tab / Shift-Tab  Cycle panes
-  Alt-h / Alt-l    Resize focused side pane
-  Alt-j / Alt-k    Resize logs pane
-  Alt--            Collapse focused non-editor pane
-  Alt-=            Reset focused pane size
-  Ctrl-S           Save current file
-  Ctrl-W           Close current tab
-  q                Quit
-  F1               Toggle help
+    let viewport_height = popup.height.saturating_sub(2) as usize;
+    let help_lines = HELP_TEXT.lines().count();
+    let max_scroll = help_lines.saturating_sub(viewport_height);
+    let scroll = app.help_scroll.min(max_scroll);
+    let visible = HELP_TEXT
+        .lines()
+        .skip(scroll)
+        .take(viewport_height)
+        .map(Line::from)
+        .collect::<Vec<_>>();
+    let title = format!(
+        "Help / Tutorial ({}/{}) - Up/Down scroll, Esc close",
+        scroll.saturating_add(1),
+        help_lines.max(1)
+    );
 
-Explorer
-  Up/Down          Move selection
-  Enter/Right      Expand directory or open file
-  Left             Collapse directory
-
-Editor
-  Arrows           Move cursor
-  Type             Insert text
-  Enter            New line
-  Backspace        Delete
-  /                Search in file
-  ] / [            Next/previous tab
-
-Tools pane
-  t / d / p        Show Tasks, Devices, Problems
-
-Tasks mode
-  Up/Down          Move selection
-  Enter            Prepare task run confirmation
-  g / s            Sync Gradle tasks/model
-  f                Filter tasks
-  v                Cycle discovered variants
-  b / i            Build or install selected variant
-
-Devices mode
-  Up/Down          Move selection
-  r                Refresh adb devices
-  l / Enter        Start confirmed logcat stream
-
-Problems mode
-  Up/Down          Move selection
-  c                Clear captured problems
-
-Logs
-  Up/Down          Scroll logs
-  c                Clear logs
-  x                Cancel active process
-";
     frame.render_widget(
-        Paragraph::new(help)
+        Paragraph::new(visible)
             .block(
                 Block::default()
-                    .title("Help")
+                    .title(title)
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(Color::Yellow)),
             )
@@ -474,6 +439,126 @@ Logs
         popup,
     );
 }
+
+const HELP_TEXT: &str = "\
+Zendroid in-app tutorial
+
+Build and run
+  cargo build --release
+  ./target/release/zendroid --project ~/AndroidStudioProjects/MyApp
+  zendroid --project ~/AndroidStudioProjects/MyApp
+
+CLI commands
+  zendroid                         Open current directory
+  zendroid <project-path>          Open a project directly
+  zendroid --project <path>        Open an explicit project path
+  zendroid --read-only             Disable file edits and command execution
+  zendroid --theme amber           Use a named theme
+  zendroid --config <path>         Use a custom config file
+  zendroid --help                  Show CLI help
+
+UI layout
+  Files                            Left project explorer
+  Editor                           Center code editor
+  Tools                            Right pane: Tasks, Devices, Problems
+  Logs                             Bottom process output
+
+Global shortcuts
+  Alt-1 / Alt-2 / Alt-3 / Alt-4    Focus Files, Editor, Tools, Logs
+  Tab / Shift-Tab                  Cycle panes
+  Alt-h / Alt-l                    Shrink or grow focused side pane
+  Alt-j / Alt-k                    Shrink or grow Logs pane
+  Alt--                            Collapse focused non-editor pane
+  Alt-=                            Reset focused pane size
+  Ctrl-S                           Save current file
+  Ctrl-W                           Close current editor tab
+  F1 or ?                          Show or close this help
+  q                                Quit
+
+Files pane
+  Up / k                           Move selection up
+  Down / j                         Move selection down
+  Enter / Right                    Expand directory or open file
+  Left                             Collapse directory or move to parent
+  r                                Refresh file tree
+
+Editor
+  Arrow keys                       Move cursor
+  Type text                        Insert characters
+  Enter                            Insert newline
+  Backspace                        Delete previous character
+  /                                Search current file
+  [ / ]                            Previous or next editor tab
+  Ctrl-S                           Save current file
+  Ctrl-W                           Close current tab
+
+Tools pane modes
+  t                                Show Gradle Tasks
+  d                                Show Android Devices
+  p                                Show Problems
+
+Tasks mode
+  Up / k                           Move task selection up
+  Down / j                         Move task selection down
+  g / s                            Sync Gradle tasks, modules, variants
+  f                                Filter task list
+  v                                Cycle discovered build variants
+  b                                Build selected variant
+  i                                Install selected variant
+  Enter                            Prepare selected task for confirmation
+
+Task execution flow
+  1. Select a task, or use b / i for the current variant.
+  2. Zendroid shows the exact command first.
+  3. Press y to run, or n / Esc to cancel.
+
+Devices mode
+  Up / k                           Move device selection up
+  Down / j                         Move device selection down
+  r                                Refresh devices with adb devices -l
+  l / Enter                        Prepare Logcat stream for confirmation
+
+Problems mode
+  Up / k                           Move problem selection up
+  Down / j                         Move problem selection down
+  c                                Clear captured problems
+
+Logs pane
+  Up / k                           Scroll logs up
+  Down / j                         Scroll logs down
+  c                                Clear logs
+  x                                Cancel active process
+
+Common workflow: edit a file
+  1. Run zendroid --project <project-path>.
+  2. Press Alt-1 and open a file from Files.
+  3. Press Alt-2, edit, then Ctrl-S to save.
+
+Common workflow: sync and build
+  1. Press Alt-3, then t for Tasks.
+  2. Press s to sync Gradle.
+  3. Press v to choose a variant.
+  4. Press b, then y to confirm.
+
+Common workflow: install
+  1. Press Alt-3, then t.
+  2. Press s if tasks are stale.
+  3. Press v for the target variant.
+  4. Press i, then y to confirm.
+
+Common workflow: Logcat
+  1. Press Alt-3, then d for Devices.
+  2. Press r to refresh devices.
+  3. Select a device.
+  4. Press l or Enter, then y to confirm.
+
+Safety model
+  Selecting a task never runs it by itself.
+  Build, install, custom task runs, and Logcat require confirmation.
+  --read-only disables file edits and process execution.
+  Only one foreground process can run at a time.
+  Device discovery is explicit, not automatic.
+";
 
 fn pane_block<'a>(title: &'a str, active: bool) -> Block<'a> {
     Block::default()
