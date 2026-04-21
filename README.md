@@ -11,6 +11,7 @@ project/task backend.
 See [docs/roadmap.md](docs/roadmap.md) for the longer-term plan toward a
 lighter Android Studio alternative.
 See [docs/workflow.md](docs/workflow.md) for the intended day-to-day workflow.
+See [docs/tutorial.md](docs/tutorial.md) for a full command and shortcut guide.
 See [docs/android-studio-context.md](docs/android-studio-context.md) for the
 Android Studio architecture notes that guide future ZenDroid phases.
 

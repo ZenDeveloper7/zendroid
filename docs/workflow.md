@@ -3,6 +3,8 @@
 This repo is meant for a terminal-first Android workflow with a much smaller
 memory footprint than keeping Android Studio open all day.
 
+For the full command and shortcut reference, see [tutorial.md](tutorial.md).
+
 ## Typical loop
 
 1. Open one Android project root.
