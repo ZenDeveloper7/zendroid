@@ -11,6 +11,8 @@ project/task backend.
 See [docs/roadmap.md](docs/roadmap.md) for the longer-term plan toward a
 lighter Android Studio alternative.
 See [docs/workflow.md](docs/workflow.md) for the intended day-to-day workflow.
+See [docs/android-studio-context.md](docs/android-studio-context.md) for the
+Android Studio architecture notes that guide future ZenDroid phases.
 
 ## Why this exists
 
@@ -48,6 +50,9 @@ intelligence stack.
 - a keyboard-first file explorer
 - a built-in multi-tab text editor with lightweight syntax highlighting
 - Gradle task discovery and filtering
+- module and variant discovery from Gradle sync
+- Android device discovery through `adb`
+- Problems capture from build/process output
 - explicit confirm-before-run task execution
 - a live bottom-pane log/output console
 - session restore for open files and pane state
@@ -147,8 +152,22 @@ zendroid --config /path/to/config.json
 
 - `Up` / `Down`: move selection
 - `Enter`: open run confirmation
-- `g`: refresh Gradle task list
+- `t` / `d` / `p`: switch the right pane between Tasks, Devices, and Problems
+- `g` / `s`: sync Gradle tasks, modules, and variants
 - `f`: filter task list
+- `v`: cycle discovered variants
+- `b` / `i`: build or install the selected variant
+
+### Devices
+
+- `Up` / `Down`: move device selection
+- `r`: refresh `adb devices -l`
+- `l` / `Enter`: start a confirmed Logcat stream for the selected device
+
+### Problems
+
+- `Up` / `Down`: move problem selection
+- `c`: clear captured problems
 
 ### Logs
 

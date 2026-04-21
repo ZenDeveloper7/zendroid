@@ -1,9 +1,11 @@
+mod android;
 mod app;
 mod cli;
 mod config;
 mod editor;
 mod explorer;
 mod gradle;
+mod problems;
 mod process;
 mod project;
 mod ui;

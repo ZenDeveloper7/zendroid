@@ -1,5 +1,7 @@
-use crate::app::{App, FocusPane, InputMode};
+use crate::app::{App, FocusPane, InputMode, RightPaneMode};
 use crate::editor::highlight_line;
+use crate::gradle::TaskCategory;
+use crate::problems::ProblemSeverity;
 use ratatui::layout::{Constraint, Direction, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -46,7 +48,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
     let editor_cursor = draw_editor(frame, app, body[1]);
     if !app.layout.tasks_collapsed {
-        draw_tasks(frame, app, body[2]);
+        draw_right_pane(frame, app, body[2]);
     }
     if !app.layout.logs_collapsed {
         draw_logs(frame, app, root[2]);
@@ -252,12 +254,87 @@ fn draw_tasks(frame: &mut Frame, app: &App, area: Rect) {
         .tasks
         .filtered_tasks()
         .into_iter()
-        .map(|task| ListItem::new(format!("{} [{}]", task.name, task.group)))
+        .map(|task| {
+            let category = match task.category {
+                TaskCategory::Build => "build",
+                TaskCategory::Install => "install",
+                TaskCategory::Test => "test",
+                TaskCategory::Lint => "lint",
+                TaskCategory::Clean => "clean",
+                TaskCategory::Other => "other",
+            };
+            let module = task.module.as_deref().unwrap_or("root");
+            ListItem::new(format!("{} [{}/{category}]", task.name, module))
+        })
         .collect();
     let list = List::new(items)
         .block(pane_block(title, app.focus == FocusPane::Tasks))
         .highlight_style(Style::default().bg(Color::Blue).fg(Color::White));
     let mut state = ListState::default().with_selected(Some(app.tasks.selected));
+    frame.render_stateful_widget(list, area, &mut state);
+}
+
+fn draw_right_pane(frame: &mut Frame, app: &App, area: Rect) {
+    match app.right_pane {
+        RightPaneMode::Tasks => draw_tasks(frame, app, area),
+        RightPaneMode::Devices => draw_devices(frame, app, area),
+        RightPaneMode::Problems => draw_problems(frame, app, area),
+    }
+}
+
+fn draw_devices(frame: &mut Frame, app: &App, area: Rect) {
+    let items = if app.devices.is_empty() {
+        vec![ListItem::new("No devices. Press r to refresh.")]
+    } else {
+        app.devices
+            .iter()
+            .map(|device| {
+                let description = if device.description.is_empty() {
+                    "".to_string()
+                } else {
+                    format!(" {}", device.description)
+                };
+                ListItem::new(format!(
+                    "{} [{}]{}",
+                    device.serial, device.state, description
+                ))
+            })
+            .collect()
+    };
+    let list = List::new(items)
+        .block(pane_block("Devices", app.focus == FocusPane::Tasks))
+        .highlight_style(Style::default().bg(Color::Blue).fg(Color::White));
+    let mut state = ListState::default().with_selected(Some(app.selected_device));
+    frame.render_stateful_widget(list, area, &mut state);
+}
+
+fn draw_problems(frame: &mut Frame, app: &App, area: Rect) {
+    let items = if app.problems.problems.is_empty() {
+        vec![ListItem::new("No problems captured yet.")]
+    } else {
+        app.problems
+            .problems
+            .iter()
+            .map(|problem| {
+                let severity = match problem.severity {
+                    ProblemSeverity::Error => "E",
+                    ProblemSeverity::Warning => "W",
+                    ProblemSeverity::Info => "I",
+                };
+                let location = match (&problem.file, problem.line) {
+                    (Some(file), Some(line)) => format!("{file}:{line}: "),
+                    (Some(file), None) => format!("{file}: "),
+                    _ => String::new(),
+                };
+                ListItem::new(format!("{severity} {location}{}", problem.message))
+            })
+            .collect()
+    };
+    let title = format!("Problems ({})", app.problems.problems.len());
+    let list = List::new(items)
+        .block(pane_block(&title, app.focus == FocusPane::Tasks))
+        .highlight_style(Style::default().bg(Color::Blue).fg(Color::White));
+    let mut state = ListState::default().with_selected(Some(app.problems.selected));
     frame.render_stateful_widget(list, area, &mut state);
 }
 
@@ -285,9 +362,16 @@ fn draw_logs(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
-    let hint = "Alt-1..4 focus panes | Alt-h/l resize side pane | Alt-j/k resize logs | Alt-- collapse | Ctrl-S save | F1 help";
+    let variant = app
+        .selected_variant
+        .as_deref()
+        .map(|variant| format!(" | variant {variant}"))
+        .unwrap_or_default();
+    let hint = format!(
+        "Alt-1..4 panes | right: t tasks d devices p problems | b build i install v variant | Ctrl-S save | F1 help{variant}"
+    );
     let message = if app.status.is_empty() {
-        hint
+        &hint
     } else {
         &app.status
     };
@@ -329,7 +413,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
     frame.render_widget(Clear, popup);
     let help = "\
 Global
-  Alt-1..4         Focus Files, Editor, Tasks, Logs
+  Alt-1..4         Focus Files, Editor, Tools, Logs
   Tab / Shift-Tab  Cycle panes
   Alt-h / Alt-l    Resize focused side pane
   Alt-j / Alt-k    Resize logs pane
@@ -353,11 +437,25 @@ Editor
   /                Search in file
   ] / [            Next/previous tab
 
-Tasks
+Tools pane
+  t / d / p        Show Tasks, Devices, Problems
+
+Tasks mode
   Up/Down          Move selection
   Enter            Prepare task run confirmation
-  g                Refresh Gradle tasks
+  g / s            Sync Gradle tasks/model
   f                Filter tasks
+  v                Cycle discovered variants
+  b / i            Build or install selected variant
+
+Devices mode
+  Up/Down          Move selection
+  r                Refresh adb devices
+  l / Enter        Start confirmed logcat stream
+
+Problems mode
+  Up/Down          Move selection
+  c                Clear captured problems
 
 Logs
   Up/Down          Scroll logs

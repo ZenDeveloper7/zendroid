@@ -1,11 +1,16 @@
+use crate::android::{AndroidDevice, discover_devices, resolve_adb};
 use crate::config::{AppConfig, SessionState};
 use crate::editor::EditorState;
 use crate::explorer::FileExplorer;
-use crate::gradle::{GradleTask, TaskDiscoveryState, TaskEvent, TaskPanel, discover_tasks};
+use crate::gradle::{
+    GradleModel, GradleTask, TaskCategory, TaskDiscoveryState, TaskEvent, TaskPanel, discover_tasks,
+};
+use crate::problems::ProblemsState;
 use crate::process::{LogState, ProcessEvent, ProcessHandle, spawn_command};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender};
+use std::thread;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusPane {
@@ -15,6 +20,13 @@ pub enum FocusPane {
     Logs,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RightPaneMode {
+    Tasks,
+    Devices,
+    Problems,
+}
+
 #[derive(Debug, Clone)]
 pub enum InputMode {
     Normal,
@@ -22,6 +34,12 @@ pub enum InputMode {
     Search { query: String },
     TaskFilter { query: String },
     ConfirmRun { command: String },
+}
+
+#[derive(Debug, Clone)]
+pub enum PendingRun {
+    Task(GradleTask),
+    Command { program: PathBuf, args: Vec<String> },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -57,16 +75,30 @@ pub struct App {
     pub explorer: FileExplorer,
     pub editor: EditorState,
     pub tasks: TaskPanel,
+    pub gradle_model: GradleModel,
+    pub selected_variant: Option<String>,
+    pub right_pane: RightPaneMode,
+    pub devices: Vec<AndroidDevice>,
+    pub selected_device: usize,
+    pub problems: ProblemsState,
     pub logs: LogState,
     pub layout: PaneLayout,
     pub process: ProcessHandle,
     pub status: String,
-    pub pending_task: Option<GradleTask>,
+    pub pending_run: Option<PendingRun>,
     pub task_tx: Sender<TaskEvent>,
     pub task_rx: Receiver<TaskEvent>,
+    pub device_tx: Sender<DeviceEvent>,
+    pub device_rx: Receiver<DeviceEvent>,
     pub process_tx: Sender<ProcessEvent>,
     pub process_rx: Receiver<ProcessEvent>,
     pub should_quit: bool,
+}
+
+#[derive(Debug)]
+pub enum DeviceEvent {
+    Started,
+    Finished(Result<Vec<AndroidDevice>, String>),
 }
 
 impl App {
@@ -77,6 +109,7 @@ impl App {
         read_only: bool,
     ) -> Self {
         let (task_tx, task_rx) = std::sync::mpsc::channel();
+        let (device_tx, device_rx) = std::sync::mpsc::channel();
         let (process_tx, process_rx) = std::sync::mpsc::channel();
         let focus = match session.selected_pane.as_deref() {
             Some("Explorer") => FocusPane::Explorer,
@@ -98,17 +131,30 @@ impl App {
             ),
             editor: EditorState::default(),
             tasks: TaskPanel::new(),
+            gradle_model: GradleModel::default(),
+            selected_variant: None,
+            right_pane: match session.right_pane.as_deref() {
+                Some("Devices") => RightPaneMode::Devices,
+                Some("Problems") => RightPaneMode::Problems,
+                _ => RightPaneMode::Tasks,
+            },
+            devices: Vec::new(),
+            selected_device: 0,
+            problems: ProblemsState::default(),
             logs: LogState::default(),
             layout: PaneLayout::default(),
             process: ProcessHandle::default(),
             status: "Project loaded".to_string(),
-            pending_task: None,
+            pending_run: None,
             task_tx,
             task_rx,
+            device_tx,
+            device_rx,
             process_tx,
             process_rx,
             should_quit: false,
         };
+        app.selected_variant = session.selected_variant.clone();
 
         for file in &session.last_open_files {
             let _ = app.editor.open_or_focus(file.clone());
@@ -143,6 +189,8 @@ impl App {
             selected_task: self.tasks.selected_task().map(|task| task.name),
             explorer_open_dirs: self.explorer.expanded_dirs(),
             selected_pane: Some(format!("{:?}", self.focus)),
+            selected_variant: self.selected_variant.clone(),
+            right_pane: Some(format!("{:?}", self.right_pane)),
         }
     }
 
@@ -154,11 +202,40 @@ impl App {
                     self.status = "Scanning Gradle tasks...".to_string();
                 }
                 TaskEvent::Finished(Ok(tasks)) => {
-                    self.tasks.apply_discovery(tasks);
-                    self.status = "Gradle tasks refreshed".to_string();
+                    self.gradle_model = tasks;
+                    self.tasks.apply_discovery(&self.gradle_model);
+                    self.selected_variant = self
+                        .selected_variant
+                        .clone()
+                        .filter(|variant| self.gradle_model.variants.contains(variant))
+                        .or_else(|| self.gradle_model.variants.first().cloned());
+                    self.status = format!(
+                        "Synced {} tasks, {} modules, {} variants",
+                        self.gradle_model.tasks.len(),
+                        self.gradle_model.modules.len(),
+                        self.gradle_model.variants.len()
+                    );
                 }
                 TaskEvent::Finished(Err(err)) => {
                     self.tasks.state = TaskDiscoveryState::Failed(err.clone());
+                    self.status = err;
+                }
+            }
+        }
+
+        while let Ok(event) = self.device_rx.try_recv() {
+            match event {
+                DeviceEvent::Started => {
+                    self.status = "Scanning Android devices...".to_string();
+                }
+                DeviceEvent::Finished(Ok(devices)) => {
+                    self.devices = devices;
+                    if self.selected_device >= self.devices.len() {
+                        self.selected_device = self.devices.len().saturating_sub(1);
+                    }
+                    self.status = format!("Found {} Android device(s)", self.devices.len());
+                }
+                DeviceEvent::Finished(Err(err)) => {
                     self.status = err;
                 }
             }
@@ -171,13 +248,16 @@ impl App {
                     self.process.command_display = Some(command);
                     self.status = "Task started".to_string();
                 }
-                ProcessEvent::Output(line) => self.logs.push(line),
+                ProcessEvent::Output(line) => {
+                    self.problems.push_from_output(&line);
+                    self.logs.push(line);
+                }
                 ProcessEvent::Finished { success, summary } => {
                     self.logs.push(summary.clone());
                     self.status = if success {
-                        "Task completed successfully".to_string()
+                        "Process completed successfully".to_string()
                     } else {
-                        "Task failed".to_string()
+                        "Process failed".to_string()
                     };
                     self.process.clear();
                 }
@@ -214,12 +294,12 @@ impl App {
             InputMode::ConfirmRun { command } => {
                 match key.code {
                     KeyCode::Char('y') => {
-                        if let Some(task) = self.pending_task.clone() {
-                            self.run_task(task);
+                        if let Some(run) = self.pending_run.clone() {
+                            self.run_pending(run);
                         }
                     }
                     KeyCode::Char('n') | KeyCode::Esc => {
-                        self.pending_task = None;
+                        self.pending_run = None;
                         self.status = "Task run cancelled".to_string();
                     }
                     _ => {
@@ -281,7 +361,7 @@ impl App {
         match self.focus {
             FocusPane::Explorer => self.handle_explorer_key(key),
             FocusPane::Editor => self.handle_editor_key(key),
-            FocusPane::Tasks => self.handle_tasks_key(key),
+            FocusPane::Tasks => self.handle_right_pane_key(key),
             FocusPane::Logs => self.handle_logs_key(key),
         }
     }
@@ -300,7 +380,7 @@ impl App {
             }
             KeyCode::Char('3') => {
                 self.focus = FocusPane::Tasks;
-                self.status = "Focused Tasks pane".to_string();
+                self.status = "Focused Tools pane".to_string();
                 true
             }
             KeyCode::Char('4') => {
@@ -384,11 +464,41 @@ impl App {
         }
     }
 
+    fn handle_right_pane_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('t') => {
+                self.right_pane = RightPaneMode::Tasks;
+                self.status = "Showing Gradle tasks".to_string();
+                return;
+            }
+            KeyCode::Char('d') => {
+                self.right_pane = RightPaneMode::Devices;
+                self.status = "Showing Android devices".to_string();
+                return;
+            }
+            KeyCode::Char('p') => {
+                self.right_pane = RightPaneMode::Problems;
+                self.status = "Showing Problems".to_string();
+                return;
+            }
+            _ => {}
+        }
+
+        match self.right_pane {
+            RightPaneMode::Tasks => self.handle_tasks_key(key),
+            RightPaneMode::Devices => self.handle_devices_key(key),
+            RightPaneMode::Problems => self.handle_problems_key(key),
+        }
+    }
+
     fn handle_tasks_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Down | KeyCode::Char('j') => self.tasks.move_down(),
             KeyCode::Up | KeyCode::Char('k') => self.tasks.move_up(),
-            KeyCode::Char('g') => self.refresh_tasks(),
+            KeyCode::Char('g') | KeyCode::Char('s') => self.refresh_tasks(),
+            KeyCode::Char('v') => self.next_variant(),
+            KeyCode::Char('b') => self.prepare_variant_task(TaskCategory::Build),
+            KeyCode::Char('i') => self.prepare_variant_task(TaskCategory::Install),
             KeyCode::Char('f') => {
                 self.input_mode = InputMode::TaskFilter {
                     query: self.tasks.filter.clone(),
@@ -397,13 +507,41 @@ impl App {
             KeyCode::Enter => {
                 if let Some(task) = self.tasks.selected_task() {
                     let command = format!("./gradlew {}", task.name);
-                    self.pending_task = Some(task);
+                    self.pending_run = Some(PendingRun::Task(task));
                     if self.read_only || self.config.confirm_before_run {
                         self.input_mode = InputMode::ConfirmRun { command };
-                    } else if let Some(task) = self.pending_task.clone() {
-                        self.run_task(task);
+                    } else if let Some(run) = self.pending_run.clone() {
+                        self.run_pending(run);
                     }
                 }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_devices_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Down | KeyCode::Char('j') => {
+                if self.selected_device + 1 < self.devices.len() {
+                    self.selected_device += 1;
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.selected_device = self.selected_device.saturating_sub(1);
+            }
+            KeyCode::Char('r') => self.refresh_devices(),
+            KeyCode::Char('l') | KeyCode::Enter => self.prepare_logcat(),
+            _ => {}
+        }
+    }
+
+    fn handle_problems_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Down | KeyCode::Char('j') => self.problems.move_down(),
+            KeyCode::Up | KeyCode::Char('k') => self.problems.move_up(),
+            KeyCode::Char('c') => {
+                self.problems.clear();
+                self.status = "Problems cleared".to_string();
             }
             _ => {}
         }
@@ -442,6 +580,14 @@ impl App {
         discover_tasks(self.project_root.clone(), self.task_tx.clone());
     }
 
+    fn refresh_devices(&mut self) {
+        let tx = self.device_tx.clone();
+        thread::spawn(move || {
+            let _ = tx.send(DeviceEvent::Started);
+            let _ = tx.send(DeviceEvent::Finished(discover_devices()));
+        });
+    }
+
     fn run_task(&mut self, task: GradleTask) {
         if self.read_only {
             self.status = "Read-only mode prevents task execution".to_string();
@@ -457,11 +603,108 @@ impl App {
         match spawn_command(&gradlew, &args, &self.project_root, self.process_tx.clone()) {
             Ok(child) => {
                 self.process.child = Some(child);
-                self.pending_task = None;
+                self.pending_run = None;
                 self.logs.push(format!("Preparing {}", task.name));
             }
             Err(err) => self.status = err,
         }
+    }
+
+    fn run_pending(&mut self, run: PendingRun) {
+        match run {
+            PendingRun::Task(task) => self.run_task(task),
+            PendingRun::Command { program, args } => self.run_command(program, args),
+        }
+    }
+
+    fn run_command(&mut self, program: PathBuf, args: Vec<String>) {
+        if self.read_only {
+            self.status = "Read-only mode prevents process execution".to_string();
+            return;
+        }
+        if self.process.is_running() {
+            self.status = "Another process is already running".to_string();
+            return;
+        }
+
+        match spawn_command(&program, &args, &self.project_root, self.process_tx.clone()) {
+            Ok(child) => {
+                self.process.child = Some(child);
+                self.pending_run = None;
+            }
+            Err(err) => self.status = err,
+        }
+    }
+
+    fn next_variant(&mut self) {
+        if self.gradle_model.variants.is_empty() {
+            self.status = "No variants discovered yet".to_string();
+            return;
+        }
+        let current = self
+            .selected_variant
+            .as_ref()
+            .and_then(|variant| {
+                self.gradle_model
+                    .variants
+                    .iter()
+                    .position(|item| item == variant)
+            })
+            .unwrap_or(0);
+        let next = (current + 1) % self.gradle_model.variants.len();
+        self.selected_variant = Some(self.gradle_model.variants[next].clone());
+        self.status = format!("Selected variant {}", self.gradle_model.variants[next]);
+    }
+
+    fn prepare_variant_task(&mut self, category: TaskCategory) {
+        let Some(variant) = self.selected_variant.clone() else {
+            self.status = "No selected variant. Sync Gradle tasks first.".to_string();
+            return;
+        };
+        let prefix = match category {
+            TaskCategory::Build => "assemble",
+            TaskCategory::Install => "install",
+            _ => return,
+        };
+        let Some(task) = self.tasks.tasks.iter().find(|task| {
+            task.category == category
+                && task
+                    .name
+                    .rsplit(':')
+                    .next()
+                    .is_some_and(|leaf| leaf == format!("{prefix}{variant}"))
+        }) else {
+            self.status = format!("No {prefix} task found for {variant}");
+            return;
+        };
+        let task = task.clone();
+        self.pending_run = Some(PendingRun::Task(task.clone()));
+        self.input_mode = InputMode::ConfirmRun {
+            command: format!("./gradlew {}", task.name),
+        };
+    }
+
+    fn prepare_logcat(&mut self) {
+        let Some(adb) = resolve_adb() else {
+            self.status = "adb not found on PATH or Android SDK".to_string();
+            return;
+        };
+        let mut args = Vec::new();
+        if let Some(device) = self.devices.get(self.selected_device) {
+            args.push("-s".to_string());
+            args.push(device.serial.clone());
+        }
+        args.push("logcat".to_string());
+        let display = format!(
+            "{} {}",
+            adb.display(),
+            args.iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        self.pending_run = Some(PendingRun::Command { program: adb, args });
+        self.input_mode = InputMode::ConfirmRun { command: display };
     }
 
     fn toggle_focused_pane(&mut self) {
@@ -621,6 +864,8 @@ mod tests {
             selected_task: Some("clean".to_string()),
             explorer_open_dirs: vec![project_root.clone()],
             selected_pane: Some("Editor".to_string()),
+            selected_variant: Some("Debug".to_string()),
+            right_pane: Some("Problems".to_string()),
         };
 
         let app = App::new(project_root.clone(), AppConfig::default(), &session, false);
@@ -628,7 +873,14 @@ mod tests {
         assert_eq!(app.editor.buffers.len(), 2);
         assert_eq!(app.editor.active_path(), Some(second.as_path()));
         assert!(app.editor.buffers.iter().any(|buffer| buffer.path == first));
-        assert!(app.editor.buffers.iter().any(|buffer| buffer.path == second));
+        assert!(
+            app.editor
+                .buffers
+                .iter()
+                .any(|buffer| buffer.path == second)
+        );
+        assert_eq!(app.selected_variant.as_deref(), Some("Debug"));
+        assert_eq!(app.right_pane, RightPaneMode::Problems);
     }
 
     fn make_test_project() -> PathBuf {
@@ -638,7 +890,11 @@ mod tests {
             .as_nanos();
         let root = std::env::temp_dir().join(format!("zendroid-test-{unique}"));
         fs::create_dir_all(&root).unwrap();
-        fs::write(root.join("settings.gradle.kts"), "rootProject.name = \"Test\"\n").unwrap();
+        fs::write(
+            root.join("settings.gradle.kts"),
+            "rootProject.name = \"Test\"\n",
+        )
+        .unwrap();
         let gradlew = root.join("gradlew");
         fs::write(
             &gradlew,

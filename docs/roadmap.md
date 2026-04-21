@@ -154,6 +154,7 @@ Success criteria:
 - better search and navigation
 - stronger editor behavior
 - first problem panel and diagnostics surfacing
+- module, variant, device, and Logcat foundations
 
 ### v0.3.x
 

@@ -11,8 +11,9 @@ memory footprint than keeping Android Studio open all day.
 4. Jump directly between panes with `Alt-1..4` instead of cycling with tab.
 5. Resize or collapse panes while you work.
 6. Filter or inspect Gradle tasks on the right.
-7. Confirm task execution only when you actually want it.
-8. Watch all output in the bottom log pane.
+7. Switch the right pane to Devices or Problems when needed.
+8. Confirm task, install, build, or Logcat execution only when you actually want it.
+9. Watch all output in the bottom log pane.
 
 Example:
 
@@ -28,6 +29,9 @@ Use `zendroid` for:
 - quick source edits
 - lightweight syntax-colored editing
 - Gradle task browsing
+- module and variant sync
+- device discovery and Logcat launch
+- basic problem capture from process output
 - explicit task execution
 - build/test output review
 - low-memory coding sessions

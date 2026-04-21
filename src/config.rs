@@ -28,11 +28,20 @@ impl Default for AppConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SessionState {
+    #[serde(default)]
     pub last_open_files: Vec<PathBuf>,
+    #[serde(default)]
     pub last_selected_file: Option<PathBuf>,
+    #[serde(default)]
     pub selected_task: Option<String>,
+    #[serde(default)]
     pub explorer_open_dirs: Vec<PathBuf>,
+    #[serde(default)]
     pub selected_pane: Option<String>,
+    #[serde(default)]
+    pub selected_variant: Option<String>,
+    #[serde(default)]
+    pub right_pane: Option<String>,
 }
 
 #[derive(Debug, Clone)]
